@@ -1,40 +1,44 @@
 Contact :: struct {
-    A, B:             *Collider;
-    normal:           Vector2;
-    depth:            float;
-    local_point_on_A: Vector2;
-    local_point_on_B: Vector2;
+    A, B:     *Collider;
+    anchor_A: Anchor;
+    anchor_B: Anchor;
+    normal:   Vector2;
+    depth:    float;
 }
 
 make_contact :: (A: *Collider, B: *Collider) -> Contact, bool {
     contact: Contact;
     ok: bool;
 
-    if      A.kind == .CIRCLE  && B.kind == .CIRCLE  contact, ok = circle_circle_contact(A, B);
-    else if A.kind == .POLYGON && B.kind == .CIRCLE  contact, ok = polygon_circle_contact(A, B);
-    else if A.kind == .CIRCLE  && B.kind == .POLYGON contact, ok = polygon_circle_contact(B, A);
-    else if A.kind == .POLYGON && B.kind == .POLYGON contact, ok = polygon_polygon_contact(A, B);
+    if      A.kind == .CIRCLE  && B.kind == .CIRCLE  contact, ok = circle_circle(A, B);
+    else if A.kind == .POLYGON && B.kind == .CIRCLE  contact, ok = polygon_circle(A, B);
+    else if A.kind == .CIRCLE  && B.kind == .POLYGON contact, ok = polygon_circle(B, A);
+    else if A.kind == .POLYGON && B.kind == .POLYGON contact, ok = polygon_polygon(A, B);
 
     return contact, ok;
 }
 
-circle_circle_contact :: (A: *Collider, B: *Collider) -> Contact, bool {
+circle_circle :: (A: *Collider, B: *Collider) -> Contact, bool {
     contact: Contact;
 
     is_colliding := distance(A.position, B.position) <= A.circle.radius + B.circle.radius;
     if !is_colliding return contact, false;
 
-    contact.A                = A;
-    contact.B                = B;
-    contact.normal           = normalize(B.position - A.position);
-    contact.local_point_on_A = B.position - contact.normal * B.circle.radius;
-    contact.local_point_on_B = A.position + contact.normal * A.circle.radius;
-    contact.depth            = distance(contact.local_point_on_A, contact.local_point_on_B);
+    contact_normal   := normalize(B.position - A.position);
+    world_point_on_A := B.position - contact_normal * B.circle.radius;
+    world_point_on_B := A.position + contact_normal * A.circle.radius;
+
+    contact.A        = A;
+    contact.B        = B;
+    contact.anchor_A = make_anchor(A, world_point_on_A);
+    contact.anchor_B = make_anchor(B, world_point_on_B);
+    contact.normal   = contact_normal;
+    contact.depth    = distance(world_point_on_A, world_point_on_B);
 
     return contact, true;
 }
 
-polygon_circle_contact :: (A: *Collider, B: *Collider) -> Contact, bool {
+polygon_circle :: (A: *Collider, B: *Collider) -> Contact, bool {
     contact: Contact;
 
     vertices  := get_vertices(A.polygon);
@@ -45,17 +49,22 @@ polygon_circle_contact :: (A: *Collider, B: *Collider) -> Contact, bool {
     is_colliding := is_inside || dist <= B.circle.radius;
     if !is_colliding return contact, false;
 
-    contact.A                = A;
-    contact.B                = B;
-    contact.normal           = ifx is_inside then normalize(closest - B.position) else normalize(B.position - closest);
-    contact.local_point_on_A = B.position - contact.normal * B.circle.radius;
-    contact.local_point_on_B = B.position - contact.normal * dist;
-    contact.depth            = distance(contact.local_point_on_A, contact.local_point_on_B);
+    closest_to_B_normal := normalize(closest - B.position);
+    contact_normal      := ifx is_inside then closest_to_B_normal else -closest_to_B_normal;
+    world_point_on_A    := B.position - contact_normal * B.circle.radius;
+    world_point_on_B    := B.position + closest_to_B_normal * dist;
+
+    contact.A        = A;
+    contact.B        = B;
+    contact.anchor_A = make_anchor(A, world_point_on_A);
+    contact.anchor_B = make_anchor(B, world_point_on_B);
+    contact.normal   = contact_normal;
+    contact.depth    = distance(world_point_on_A, world_point_on_B);
 
     return contact, true;
 }
 
-polygon_polygon_contact :: (A: *Collider, B: *Collider) -> Contact, bool {
+polygon_polygon :: (A: *Collider, B: *Collider) -> Contact, bool {
     contact: Contact;
 
     vertices_a := get_vertices(A.polygon);
@@ -67,12 +76,16 @@ polygon_polygon_contact :: (A: *Collider, B: *Collider) -> Contact, bool {
     ba, is_colliding_ba := find_sat_collision(vertices_b, vertices_a);
     if !is_colliding_ba return contact, false;
 
-    contact.A                = A;
-    contact.B                = B;
-    contact.normal           = ifx ab.depth < ba.depth then ab.normal else -ba.normal;
-    contact.local_point_on_A = ifx ab.depth < ba.depth then ab.point  else  ba.point + ba.normal * ba.depth;
-    contact.local_point_on_B = ifx ab.depth > ba.depth then ba.point  else  ab.point + ab.normal * ab.depth;
-    contact.depth            = distance(contact.local_point_on_A, contact.local_point_on_B);
+    contact_normal   := ifx ab.depth < ba.depth then ab.normal else -ba.normal;
+    world_point_on_A := ifx ab.depth < ba.depth then ab.point  else ba.point + ba.normal * ba.depth;
+    world_point_on_B := ifx ab.depth > ba.depth then ba.point  else ab.point + ab.normal * ab.depth;
+
+    contact.A        = A;
+    contact.B        = B;
+    contact.anchor_A = make_anchor(A, world_point_on_A);
+    contact.anchor_B = make_anchor(B, world_point_on_B);
+    contact.normal   = contact_normal;
+    contact.depth    = distance(world_point_on_A, world_point_on_B);
 
     return contact, true;
 }
@@ -80,36 +93,42 @@ polygon_polygon_contact :: (A: *Collider, B: *Collider) -> Contact, bool {
 solve :: (using contact: *Contact) {
     if is_static(A) && is_static(B) return;
 
-    a := local_point_on_A - A.position;
-    b := local_point_on_B - B.position;
+    pa := get_position(anchor_A) - A.position;
+    pb := get_position(anchor_B) - B.position;
 
-    va := A.linear_velocity + A.angular_velocity * perpendicular(a);
-    vb := B.linear_velocity + B.angular_velocity * perpendicular(b);
-    v  := vb - va; // Relative velocity
+    va := A.linear_velocity + A.angular_velocity * perpendicular(pa);
+    vb := B.linear_velocity + B.angular_velocity * perpendicular(pb);
+    V  := vb - va; // Relative velocity
 
-    n  := normal;
-    vn := dot(v, n);
+    N   := normal;
+    dvn := dot(V, N);
 
-    colliders_are_moving_apart := vn > 0.0;
+    colliders_are_moving_apart := dvn > 0.0;
     if colliders_are_moving_apart return;
 
-    t  := n * vn - v; // Tangent
-    vt := dot(v, t);
+    T   := N * dvn - V; // Tangent
+    dvt := dot(V, T);
 
-    e := min(A.elasticity, B.elasticity);
-    f := min(A.friction, B.friction);
+    E := min(A.elasticity, B.elasticity);
+    F := min(A.friction, B.friction);
+    M := A.inv_mass + B.inv_mass;
 
-    normal_magnitude  := -(1.0 + e) * vn     / (A.inv_mass + B.inv_mass + A.inv_inertia * cross(a, n) * cross(a, n) + B.inv_inertia * cross(b, n) * cross(b, n));
-    tangent_magnitude := -(1.0 + e) * vt * f / (A.inv_mass + B.inv_mass + A.inv_inertia * cross(a, t) * cross(a, t) + B.inv_inertia * cross(b, t) * cross(b, t));
+    can := cross(pa, N);
+    cbn := cross(pb, N);
+    cat := cross(pa, T);
+    cbt := cross(pb, T);
 
-    impulse := n * normal_magnitude + t * tangent_magnitude;
-    apply_impulse_at_point(A, -impulse, a);
-    apply_impulse_at_point(B,  impulse, b);
+    normal_magnitude  := -(1.0 + E) * dvn     / (M + A.inv_inertia * can * can + B.inv_inertia * cbn * cbn);
+    tangent_magnitude := -(1.0 + E) * dvt * F / (M + A.inv_inertia * cat * cat + B.inv_inertia * cbt * cbt);
+
+    impulse := N * normal_magnitude + T * tangent_magnitude;
+    apply_impulse_at_point(A, -impulse, pa);
+    apply_impulse_at_point(B,  impulse, pb);
 
     DEPTH_ALLOWANCE  :: 0.05;
-    DEPTH_CORRECTION :: 0.4;
+    DEPTH_CORRECTION :: 0.45;
 
-    correction := max(depth - DEPTH_ALLOWANCE, 0.0) / (A.inv_mass + B.inv_mass) * DEPTH_CORRECTION;
-    move(A, correction * -n * A.inv_mass);
-    move(B, correction *  n * B.inv_mass);
+    correction := max(depth - DEPTH_ALLOWANCE, 0.0) / M * DEPTH_CORRECTION;
+    move(A, correction * -N * A.inv_mass);
+    move(B, correction *  N * B.inv_mass);
 }

@@ -1,32 +1,15 @@
-#import "Basic";
-#import "Math";
-
-Window  :: #import "Window_Creation";
-Input   :: #import "Input";
-Simp    :: #import "Simp";
-
-Physics :: #import "Physics";
-
-window        : Window.Window_Type;
-window_width  : s32 = 1100;
-window_height : s32 = 900;
-
-current_time: float64;
-last\  _time: float64;
-
 colliders: [..] *Physics.Collider;
 
-yotsuba1, yotsuba2, yotsuba3, yotsuba4: Simp.Texture;
+circ1, circ2:               Physics.Collider;
+rect1, rect2, rect3, rect4: Physics.Collider;
+walls:                      [4] Physics.Collider;
 
 My_Collider_Userdata :: struct {
     texture: *Simp.Texture;
 }
-
 data1, data2, data3, data4: My_Collider_Userdata;
 
-circle1, circle2:                               Physics.Collider;
-rectangle1, rectangle2, rectangle3, rectangle4: Physics.Collider;
-wall_l, wall_r, wall_t, wall_b:                 Physics.Collider;
+yotsuba1, yotsuba2, yotsuba3, yotsuba4: Simp.Texture;
 
 main :: () {
     #if OS == .WINDOWS {
@@ -44,34 +27,34 @@ main :: () {
     Simp.texture_load_from_file(*yotsuba3, "assets/yotsuba3.png");
     Simp.texture_load_from_file(*yotsuba4, "assets/yotsuba4.png");
 
-    circle1    = Physics.make_circle(.{300, 300}, 50.0, 1.0, 0.5, 0.05);
-    circle2    = Physics.make_circle(.{300, 600}, 50.0, 1.0, 0.5, 0.05);
+    circ1 = Physics.make_circle(.{300, 300}, 50.0, 1.0, 0.5, 0.05);
+    circ2 = Physics.make_circle(.{300, 600}, 50.0, 1.0, 0.5, 0.05);
 
-    rectangle1 = Physics.make_rectangle(.{ 500, 200 }, xx yotsuba1.width, xx yotsuba1.height, 1.0, 0.5, 0.05);
-    rectangle2 = Physics.make_rectangle(.{ 700, 300 }, xx yotsuba2.width, xx yotsuba2.height, 1.0, 0.5, 0.05);
-    rectangle3 = Physics.make_rectangle(.{ 500, 700 }, xx yotsuba3.width, xx yotsuba3.height, 1.0, 0.5, 0.05);
-    rectangle4 = Physics.make_rectangle(.{ 700, 700 }, xx yotsuba4.width, xx yotsuba4.height, 1.0, 0.5, 0.05);
+    rect1 = Physics.make_rectangle(.{ 500, 200 }, xx yotsuba1.width, xx yotsuba1.height, 1.0, 0.5, 0.05);
+    rect2 = Physics.make_rectangle(.{ 700, 300 }, xx yotsuba2.width, xx yotsuba2.height, 1.0, 0.5, 0.05);
+    rect3 = Physics.make_rectangle(.{ 500, 700 }, xx yotsuba3.width, xx yotsuba3.height, 1.0, 0.5, 0.05);
+    rect4 = Physics.make_rectangle(.{ 700, 700 }, xx yotsuba4.width, xx yotsuba4.height, 1.0, 0.5, 0.05);
 
     W := cast(float) window_width;
     H := cast(float) window_height;
     O := 50.0;
 
-    wall_l     = Physics.make_rectangle(.{ W/2.0, -O    }, W      , O * 2.0, 0.0, 0.5, 0.05);
-    wall_r     = Physics.make_rectangle(.{ W/2.0, H + O }, W      , O * 2.0, 0.0, 0.5, 0.05);
-    wall_t     = Physics.make_rectangle(.{-O    , H/2.0 }, O * 2.0, H      , 0.0, 0.5, 0.05);
-    wall_b     = Physics.make_rectangle(.{ W + O, H/2.0 }, O * 2.0, H      , 0.0, 0.5, 0.05);
+    walls[0] = Physics.make_rectangle(.{ W/2.0, -O    }, W      , O * 2.0, 0.0, 0.5, 0.05);
+    walls[1] = Physics.make_rectangle(.{ W/2.0, H + O }, W      , O * 2.0, 0.0, 0.5, 0.05);
+    walls[2] = Physics.make_rectangle(.{-O    , H/2.0 }, O * 2.0, H      , 0.0, 0.5, 0.05);
+    walls[3] = Physics.make_rectangle(.{ W + O, H/2.0 }, O * 2.0, H      , 0.0, 0.5, 0.05);
 
-    array_add(*colliders, *circle1, *rectangle1, *rectangle2, *rectangle3, *rectangle4, *circle2, *wall_l, *wall_r, *wall_t, *wall_b);
+    array_add(*colliders, *circ1, *rect1, *rect2, *rect3, *rect4, *circ2, *walls[0], *walls[1], *walls[2], *walls[3]);
 
     data1.texture = *yotsuba1;
     data2.texture = *yotsuba2;
     data3.texture = *yotsuba3;
     data4.texture = *yotsuba4;
 
-    rectangle1.userdata = *data1;
-    rectangle2.userdata = *data2;
-    rectangle3.userdata = *data3;
-    rectangle4.userdata = *data4;
+    rect1.userdata = *data1;
+    rect2.userdata = *data2;
+    rect3.userdata = *data3;
+    rect4.userdata = *data4;
 
     quit := false;
     while !quit {
@@ -107,10 +90,10 @@ main :: () {
         LEFT  :: Vector2.{ -1,  0 };
         RIGHT :: Vector2.{  1,  0 };
 
-        if Input.input_button_states[Input.Key_Code.ARROW_UP]    & .DOWN Physics.add_force(*circle1, FORCE * UP);
-        if Input.input_button_states[Input.Key_Code.ARROW_DOWN]  & .DOWN Physics.add_force(*circle1, FORCE * DOWN);
-        if Input.input_button_states[Input.Key_Code.ARROW_LEFT]  & .DOWN Physics.add_force(*circle1, FORCE * LEFT);
-        if Input.input_button_states[Input.Key_Code.ARROW_RIGHT] & .DOWN Physics.add_force(*circle1, FORCE * RIGHT);
+        if Input.input_button_states[Input.Key_Code.ARROW_UP]    & .DOWN Physics.add_force(*circ1, FORCE * UP);
+        if Input.input_button_states[Input.Key_Code.ARROW_DOWN]  & .DOWN Physics.add_force(*circ1, FORCE * DOWN);
+        if Input.input_button_states[Input.Key_Code.ARROW_LEFT]  & .DOWN Physics.add_force(*circ1, FORCE * LEFT);
+        if Input.input_button_states[Input.Key_Code.ARROW_RIGHT] & .DOWN Physics.add_force(*circ1, FORCE * RIGHT);
 
         draw_one_frame(dt);
 
@@ -204,3 +187,18 @@ draw_circle :: (center: Vector2, radius: float, color: Vector4, width: float) {
         draw_segment(a, b, color, width);
     }
 }
+
+window        : Window.Window_Type;
+window_width  : s32 = 1100;
+window_height : s32 = 900;
+
+current_time: float64;
+last\  _time: float64;
+
+#import "Basic";
+#import "Math";
+
+Window  :: #import "Window_Creation";
+Input   :: #import "Input";
+Simp    :: #import "Simp";
+Physics :: #import "Physics";

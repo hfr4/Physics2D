@@ -1,5 +1,6 @@
 colliders: [..] *Physics.Collider;
-poly1, poly2, circ1, circ2: Physics.Collider;
+
+polygon1, polygon2: Physics.Collider;
 
 main :: () {
     #if OS == .WINDOWS {
@@ -12,15 +13,17 @@ main :: () {
 
     Simp.set_render_target(window, .LEFT_HANDED);
 
-    my_font = Simp.get_font_at_size("assets", "OpenSans.ttf", 22);
-    assert(my_font != null);
+    W := cast(float) window_width;
+    H := cast(float) window_height;
+    C := Vector2.{ W / 2.0, H / 2.0 };
+    O := 50.0;
 
-    circ1 = Physics.make_circle(.{600, 325}, 50.0, 1.0, 0.5, 0.05);
-    circ2 = Physics.make_circle(.{700, 650}, 100.0, 1.0, 0.5, 0.05);
-    poly1 = Physics.make_polygon(.[ .{280, 280}, .{400, 300}, .{300, 400} ], 1.0, 0.5, 0.05);
-    poly2 = Physics.make_polygon(.[ .{200, 600}, .{300, 550}, .{400, 600}, .{450, 700}, .{200, 700} ], 1.0, 0.5, 0.05);
+    vertices1 := Vector2.[ .{280, 280}, .{400, 300}, .{300, 400} ];
+    vertices2 := Vector2.[ .{500, 300}, .{600, 250}, .{700, 300}, .{750, 400}, .{500, 400} ];
+    polygon1  = Physics.make_polygon(vertices1, 1.0, 0.5, 0.05);
+    polygon2  = Physics.make_polygon(vertices2, 1.0, 0.5, 0.05);
 
-    array_add(*colliders, *poly1, *poly2, *circ1, *circ2);
+    array_add(*colliders, *polygon1, *polygon2);
 
     quit := false;
     while !quit {
@@ -60,29 +63,23 @@ main :: () {
         RIGHT :: Vector2.{  1,  0 };
 
         if Input.input_button_states[Input.Key_Code.ARROW_UP] & .DOWN {
-            Physics.add_force(*poly1, FORCE * UP);
-            Physics.add_force(*circ1, FORCE * UP);
+            Physics.add_force(*polygon1, FORCE * UP);
         }
 
         if Input.input_button_states[Input.Key_Code.ARROW_DOWN] & .DOWN {
-            Physics.add_force(*poly1, FORCE * DOWN);
-            Physics.add_force(*circ1, FORCE * DOWN);
+            Physics.add_force(*polygon1, FORCE * DOWN);
         }
 
         ctrl_is_down := Input.input_button_states[Input.Key_Code.CTRL] & .DOWN;
 
         if Input.input_button_states[Input.Key_Code.ARROW_LEFT] & .DOWN {
-            if ctrl_is_down Physics.add_torque(*poly1, -TORQUE);
-            else            Physics.add_force(*poly1, FORCE * LEFT);
-            if ctrl_is_down Physics.add_torque(*circ1, -TORQUE);
-            else            Physics.add_force(*circ1, FORCE * LEFT);
+            if ctrl_is_down Physics.add_torque(*polygon1, -TORQUE);
+            else            Physics.add_force(*polygon1, FORCE * LEFT);
         }
 
         if Input.input_button_states[Input.Key_Code.ARROW_RIGHT] & .DOWN {
-            if ctrl_is_down Physics.add_torque(*poly1, TORQUE);
-            else            Physics.add_force(*poly1, FORCE * RIGHT);
-            if ctrl_is_down Physics.add_torque(*circ1, TORQUE);
-            else            Physics.add_force(*circ1, FORCE * RIGHT);
+            if ctrl_is_down Physics.add_torque(*polygon1, TORQUE);
+            else            Physics.add_force(*polygon1, FORCE * RIGHT);
         }
 
         draw_one_frame(dt);
@@ -112,15 +109,6 @@ draw_one_frame :: (dt: float) {
         Physics.update(it, dt);
     }
 
-    contacts: [..] Physics.Contact;
-    contacts.allocator = temp;
-    for i: 0..colliders.count - 2 {
-        for j: i + 1..colliders.count - 1 {
-            contact, ok := Physics.make_contact(colliders[i], colliders[j]);
-            if ok array_add(*contacts, contact);
-        }
-    }
-
     for colliders {
         if it.kind == {
             case .CIRCLE;
@@ -132,21 +120,52 @@ draw_one_frame :: (dt: float) {
         }
     }
 
-    for contacts {
-        wa := Physics.get_position(it.anchor_A);
-        wb := Physics.get_position(it.anchor_B);
+/*
+    for i: 0..colliders.count - 2 {
+        for j: i + 1..colliders.count - 1 {
+            contact, ok := make_contact(*colliders[i], *colliders[j]);
 
-        draw_segment(wa, wa + it.normal * it.depth, .{ .4, 1, 0, 1 }, 2.0);
+            draw_point(contact.start, .{ 0, 1, 0, 1}, 10.0);
+            draw_point(contact.end  , .{ 1, 0, 0, 1}, 10.0);
+        }
+    }
+*/
 
-        Simp.set_shader_for_text();
+    vertices_a := Physics.get_vertices(polygon1.polygon);
+    vertices_b := Physics.get_vertices(polygon2.polygon);
 
-        Simp.draw_text(my_font, xx wa.x, xx (wa.y - 20), "A", .{ 1., .4, 0, 1 });
-        Simp.draw_text(my_font, xx wb.x, xx (wb.y - 20), "B", .{ .0, .8, 1, 1 });
+/*
+    {
+        sat_a, ok_a := find_sat_separation(vertices_a, vertices_b);
+        sat_b, ok_b := find_sat_separation(vertices_a, vertices_b);
 
-        Simp.set_shader_for_color(true);
+        if ok_a draw_point(sat_a.point, .{ 0, 1, 0, 1 }, 10.0);
+        if ok_a draw_segment(sat_a.point, sat_a.point + sat_a.normal * sat_a.depth, .{ 0, 1, 0, 1 }, 2.0);
 
-        draw_point(wa, .{ 1., .4, 0, 1 }, 10.0);
-        draw_point(wb, .{ .0, .8, 1, 1 }, 10.0);
+        if ok_b draw_point(sat_b.point, .{ 1, 0, 0, 1 }, 10.0);
+        if ok_b draw_segment(sat_b.point, sat_b.point + sat_b.normal * sat_b.depth, .{ 1, 0, 0, 1 }, 2.0);
+    }
+*/
+
+    {
+        i := 0;
+        j := (i + 1) % vertices_a.count;
+
+        edge   := vertices_a[i] - vertices_a[j];
+        vector := normalize(edge);
+        perpendicular :: (using v: Vector2) -> Vector2 {
+            return .{ -y, x };
+        }
+        normal := perpendicular(vector);
+
+        draw_point(vertices_a[i], .{ 1, 0, 0, 1 }, 10.0);
+        draw_segment(vertices_a[i], vertices_a[j], .{ 1, 0, 0, 1 }, 2.0);
+        draw_segment(vertices_a[i], vertices_a[i] + normal * 20.0, .{ 0, 1, 0, 1 }, 2.0);
+
+        support := Physics.find_sat_support(vertices_a[i], normal, vertices_b);
+        draw_point(support.point, .{ 0, 1, 1, 1 }, 10.0);
+        draw_segment(support.point, support.point + normal * support.depth, .{ 0, 1, 1, 1 }, 2.0);
+
     }
 
     Simp.swap_buffers(window);
@@ -194,8 +213,6 @@ window_height : s32 = 900;
 
 current_time: float64;
 last\  _time: float64;
-
-my_font: *Simp.Dynamic_Font;
 
 #import "Basic";
 #import "Math";

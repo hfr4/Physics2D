@@ -56,30 +56,6 @@ make_rectangle :: (center: Vector2, width: float, height: float, mass: float, el
     return make_polygon(vertices, mass, elasticity, friction);
 }
 
-update :: (using collider: *Collider, dt: float) {
-    if is_static(collider) return;
-
-    // Semi-Implicit Euler integration
-
-    linear_acceleration  := force_accumulator  * inv_mass;
-    angular_acceleration := torque_accumulator * inv_inertia;
-
-    linear_velocity  += linear_acceleration  * dt;
-    angular_velocity += angular_acceleration * dt;
-
-    LINEAR_CORRECTION  :: 0.999;
-    ANGULAR_CORRECTION :: 0.995;
-
-    linear_velocity  *= LINEAR_CORRECTION;
-    angular_velocity *= ANGULAR_CORRECTION;
-
-    move(collider, linear_velocity * dt);
-    rotate(collider, angular_velocity * dt);
-
-    force_accumulator  = .{};
-    torque_accumulator = 0.0;
-}
-
 is_static :: (using collider: Collider) -> bool {
     return inv_mass == 0.0;
 }
@@ -90,6 +66,14 @@ is_point_inside :: (using collider: Collider, world_point: Vector2) -> bool {
     } else {
         return is_point_inside_polygon(get_vertices(polygon), world_point);
     }
+}
+
+local_to_world :: (using collider: *Collider, local_point: Vector2) -> Vector2 {
+	return rotate(local_point, rotation) + position;
+}
+
+world_to_local :: (using collider: *Collider, world_point: Vector2) -> Vector2 {
+	return rotate(world_point - position, -rotation);
 }
 
 add_force :: (using collider: *Collider, force: Vector2) {
@@ -151,10 +135,26 @@ rotate :: (using collider: *Collider, theta: float) {
     }
 }
 
-local_to_world :: (using collider: *Collider, local_point: Vector2) -> Vector2 {
-	return rotate(local_point, rotation) + position;
-}
+update :: (using collider: *Collider, dt: float) {
+    if is_static(collider) return;
 
-world_to_local :: (using collider: *Collider, world_point: Vector2) -> Vector2 {
-	return rotate(world_point - position, -rotation);
+    // Semi-Implicit Euler integration
+
+    linear_acceleration  := force_accumulator  * inv_mass;
+    angular_acceleration := torque_accumulator * inv_inertia;
+
+    linear_velocity  += linear_acceleration  * dt;
+    angular_velocity += angular_acceleration * dt;
+
+    LINEAR_CORRECTION  :: 0.999;
+    ANGULAR_CORRECTION :: 0.995;
+
+    linear_velocity  *= LINEAR_CORRECTION;
+    angular_velocity *= ANGULAR_CORRECTION;
+
+    move(collider, linear_velocity * dt);
+    rotate(collider, angular_velocity * dt);
+
+    force_accumulator  = .{};
+    torque_accumulator = 0.0;
 }

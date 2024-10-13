@@ -1,24 +1,8 @@
-#import "Basic";
-#import "Math";
-
-Window  :: #import "Window_Creation";
-Input   :: #import "Input";
-Simp    :: #import "Simp";
-
-Physics :: #import "Physics";
-
-window        : Window.Window_Type;
-window_width  : s32 = 1100;
-window_height : s32 = 900;
-
-current_time: float64;
-last\  _time: float64;
-
 colliders: [..] *Physics.Collider;
 mouse_anchor: Physics.Anchor;
 
 polygon, rectangle, circle: Physics.Collider;
-wall_l, wall_r, wall_t, wall_b: Physics.Collider;
+walls: [4] Physics.Collider;
 
 colliders_joint: Physics.Joint;
 
@@ -33,23 +17,23 @@ main :: () {
 
     Simp.set_render_target(window, .LEFT_HANDED);
 
+    polygon   = Physics.make_polygon(.[ .{300, 300}, .{400, 300}, .{300, 400} ], 1.0, 0.5, 0.05);
+    rectangle = Physics.make_rectangle(.{500, 200}, 200, 50 , 1.0, 0.5, 0.05);
+    circle    = Physics.make_circle(.{700, 300}, 50.0, 1.0, 0.5, 0.05);
+
+    // colliders_joint = Physics.make_joint(*polygon, polygon.position, *circle, circle.position);
+
     W := cast(float) window_width;
     H := cast(float) window_height;
     C := Vector2.{ W / 2.0, H / 2.0 };
     O := 50.0;
 
-    polygon   = Physics.make_polygon(.[ .{300, 300}, .{400, 300}, .{300, 400} ], 1.0, 0.5, 0.05);
-    rectangle = Physics.make_rectangle(.{500, 200}, 200, 50 , 1.0, 0.5, 0.05);
-    circle    = Physics.make_circle(.{700, 300}, 50.0, 1.0, 0.5, 0.05);
+    walls[0] = Physics.make_rectangle(.{ C.x  , -O    }, W      , O * 2.0, 0.0, 0.5, 0.05);
+    walls[1] = Physics.make_rectangle(.{ C.x  , H + O }, W      , O * 2.0, 0.0, 0.5, 0.05);
+    walls[2] = Physics.make_rectangle(.{-O    , C.y   }, O * 2.0, H      , 0.0, 0.5, 0.05);
+    walls[3] = Physics.make_rectangle(.{ W + O, C.y   }, O * 2.0, H      , 0.0, 0.5, 0.05);
 
-    colliders_joint = Physics.make_joint(*polygon, polygon.position, *circle, circle.position);
-
-    wall_l    = Physics.make_rectangle(.{ C.x  , -O    }, W      , O * 2.0, 0.0, 0.5, 0.05);
-    wall_r    = Physics.make_rectangle(.{ C.x  , H + O }, W      , O * 2.0, 0.0, 0.5, 0.05);
-    wall_t    = Physics.make_rectangle(.{-O    , C.y   }, O * 2.0, H      , 0.0, 0.5, 0.05);
-    wall_b    = Physics.make_rectangle(.{ W + O, C.y   }, O * 2.0, H      , 0.0, 0.5, 0.05);
-
-    array_add(*colliders, *polygon, *rectangle, *circle, *wall_l, *wall_r, *wall_t, *wall_b);
+    array_add(*colliders, *polygon, *rectangle, *circle, *walls[0], *walls[1], *walls[2], *walls[3]);
 
     quit := false;
     while !quit {
@@ -120,7 +104,7 @@ draw_one_frame :: (dt: float) {
             Physics.add_force_at_point(mouse_anchor.collider, mouse_force, anchor_position);
         }
     }
-
+/*
     {
         a_anchor_position := Physics.get_position(colliders_joint.A);
         b_anchor_position := Physics.get_position(colliders_joint.B);
@@ -138,7 +122,7 @@ draw_one_frame :: (dt: float) {
         Physics.add_force_at_point(colliders_joint.A.collider, -force, a_anchor_position);
         Physics.add_force_at_point(colliders_joint.B.collider,  force, b_anchor_position);
     }
-
+*/
     for colliders {
         GRAVITY :: Vector2.{ 0, 250 };
 
@@ -173,14 +157,14 @@ draw_one_frame :: (dt: float) {
         draw_segment(anchor_position, mouse_position, .{ 1, 0, 0, 1}, 2.0);
         draw_circle(anchor_position, 5.0, .{ 1, 0, 0, 1}, 2.0);
     }
-
+/*
     {
         a_position, b_position := Physics.get_positions(colliders_joint);
         draw_segment(a_position, b_position, .{ 0, 1, 1, 1}, 2.0);
         draw_circle(a_position, 5.0, .{ 0, 1, 1, 1}, 2.0);
         draw_circle(b_position, 5.0, .{ 0, 1, 1, 1}, 2.0);
     }
-
+*/
     Simp.swap_buffers(window);
 }
 
@@ -219,3 +203,18 @@ draw_circle :: (center: Vector2, radius: float, color: Vector4, width: float) {
         draw_segment(a, b, color, width);
     }
 }
+
+window        : Window.Window_Type;
+window_width  : s32 = 1100;
+window_height : s32 = 900;
+
+current_time: float64;
+last\  _time: float64;
+
+#import "Basic";
+#import "Math";
+
+Window  :: #import "Window_Creation";
+Input   :: #import "Input";
+Simp    :: #import "Simp";
+Physics :: #import "Physics";
