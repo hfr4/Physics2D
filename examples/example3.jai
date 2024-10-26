@@ -17,7 +17,7 @@ main :: () {
 
     circ1 = Physics.make_circle(.{600, 325}, 50.0, 1.0, 0.5, 0.05);
     circ2 = Physics.make_circle(.{700, 650}, 100.0, 1.0, 0.5, 0.05);
-    poly1 = Physics.make_polygon(.[ .{280, 280}, .{400, 300}, .{300, 400} ], 1.0, 0.5, 0.05);
+    poly1 = Physics.make_polygon(.[ .{100, 100}, .{200, 100}, .{200, 200}, .{100, 200} ], 1.0, 0.5, 0.05);
     poly2 = Physics.make_polygon(.[ .{200, 600}, .{300, 550}, .{400, 600}, .{450, 700}, .{200, 700} ], 1.0, 0.5, 0.05);
 
     array_add(*colliders, *poly1, *poly2, *circ1, *circ2);
@@ -93,6 +93,9 @@ main :: () {
 }
 
 draw_one_frame :: (dt: float) {
+    mx, my := Window.get_mouse_pointer_position(right_handed = false);
+    mouse_position := Vector2.{ cast(float) mx , cast(float) my };
+
     Simp.clear_render_target(.1, .1, .1, 1);
 
     Simp.set_shader_for_color(true);
@@ -116,10 +119,11 @@ draw_one_frame :: (dt: float) {
     contacts.allocator = temp;
     for i: 0..colliders.count - 2 {
         for j: i + 1..colliders.count - 1 {
-            contact, ok := Physics.make_contact(colliders[i], colliders[j]);
-            if ok array_add(*contacts, contact);
+            c, count := Physics.generate_contacts(colliders[i], colliders[j]);
+            for 0..count - 1 array_add(*contacts, c[it]);
         }
     }
+
 
     for colliders {
         if it.kind == {

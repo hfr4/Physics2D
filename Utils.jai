@@ -46,7 +46,8 @@ is_point_inside_polygon :: (vertices: [] Vector2, point: Vector2) -> bool {
     for i: 0..vertices.count - 1 {
         j := (i + 1) % vertices.count;
 
-        normal := perpendicular(normalize(vertices[i] - vertices[j]));
+        edge   : Segment = .[ vertices[i], vertices[j] ];
+        normal := segment_normal(edge);
         depth  := dot(point - vertices[i], normal);
 
         if depth > 0.0 return false;
@@ -59,27 +60,48 @@ is_point_inside_circle :: (center: Vector2, radius: float, point: Vector2) -> bo
     return distance(center, point) <= radius;
 }
 
-find_closest_edge_from_point :: (vertices: [] Vector2, point: Vector2) -> [2] Vector2 {
-    edge: [2] Vector2;
+find_closest_edge_from_point :: (vertices: [] Vector2, point: Vector2) -> Segment {
+    result: Segment;
 
-    min_depth := -FLOAT32_MAX;
+    max_depth := -FLOAT32_MAX;
     for i: 0..vertices.count - 1 {
         j := (i + 1) % vertices.count;
 
-        normal := perpendicular(normalize(vertices[i] - vertices[j]));
-        depth  := dot(point - vertices[i], normal);
+        edge : Segment = .[ vertices[i], vertices[j] ];
+        depth := dot(point - vertices[i], segment_normal(edge));
 
-        if depth > min_depth {
-            min_depth = depth;
-            edge[0]   = vertices[i];
-            edge[1]   = vertices[j];
+        if depth > max_depth {
+            max_depth = depth;
+            result    = edge;
+
         }
     }
 
-    return edge;
+    return result;
 }
 
-find_closest_point_on_edge :: (edge: [2] Vector2, point: Vector2) -> Vector2 {
+find_edge_pointed_by_direction :: (vertices: [] Vector2, dir: Vector2) -> Segment {
+    result: Segment;
+
+    min_proj := FLOAT32_INFINITY;
+
+    for i: 0..vertices.count - 1 {
+        j := (i + 1) % vertices.count;
+
+        edge : Segment = .[ vertices[i], vertices[j] ];
+        normal := segment_normal(edge);
+        proj   := dot(normal, dir);
+
+        if proj < min_proj {
+            min_proj = proj;
+            result   = edge;
+        }
+    }
+
+    return result;
+}
+
+find_closest_point_on_edge :: (edge: Segment, point: Vector2) -> Vector2 {
     vector        := edge[1] - edge[0];
     ratio_on_line := dot(point - edge[0], vector) / dot(vector, vector);
     ratio_on_edge := clamp(ratio_on_line, 0.0, 1.0);
@@ -91,52 +113,74 @@ find_closest_point_on_vertices :: (vertices: [] Vector2, point: Vector2) -> Vect
     return find_closest_point_on_edge(edge, point);
 }
 
-SAT_Contact :: struct {
-    point:  Vector2;
-    depth:  float = FLOAT32_MAX;
-    normal: Vector2;
-}
+find_smallest_separating_edge_and_depth_using_SAT :: (vertices_a: [] Vector2, vertices_b: [] Vector2) -> Segment, float {
+    result: Segment;
+    depth := -FLOAT32_INFINITY;
 
-find_sat_collision :: (A: [] Vector2, B: [] Vector2) -> SAT_Contact, bool {
-    result: SAT_Contact;
+    for i: 0..vertices_a.count - 1 {
+        j := (i + 1) % vertices_a.count;
 
-    for i: 0..A.count - 1 {
-        j := (i + 1) % A.count;
+        edge : Segment = .[ vertices_a[i], vertices_a[j] ];
+        normal := segment_normal(edge);
 
-        normal  := perpendicular(normalize(A[i] - A[j]));
-        support := find_sat_support(A[i], normal, B);
+        min_proj := FLOAT32_INFINITY;
+        for b: vertices_b {
+            proj := dot((b - edge[0]), normal);
+            if min_proj > proj {
+                min_proj = proj;
+            }
+        }
 
-        // Separating axis found, no collision
-        if support.depth <= 0.0 return result, false;
-
-        if result.depth > support.depth {
-            result.point  = support.point;
-            result.depth  = support.depth;
-            result.normal = normal;
+        if depth < min_proj {
+            depth  = min_proj;
+            result = edge;
         }
     }
 
-    return result, true;
+    return result, depth;
 }
 
-SAT_Support :: struct {
-    point: Vector2;
-    depth: float = -FLOAT32_MAX;
-}
+clip_segment_with_line :: (segment: Segment, line: Segment) -> Segment, int {
+    clipped: Segment;
+    count: int;
 
-find_sat_support :: (point: Vector2, normal: Vector2, vertices: [] Vector2) -> SAT_Support {
-    result: SAT_Support;
+    c0 := cross(segment[0] - line[0], line[1] - line[0]);
+    c1 := cross(segment[1] - line[0], line[1] - line[0]);
 
-    for vertices {
-        depth := dot(point - it, normal);
-
-        if result.depth < depth {
-            result.point = it;
-            result.depth = depth;
-        }
+    if c0 <= 0.0 {
+        clipped[count] = segment[0];
+        count += 1;
     }
 
-    return result;
+    if c1 <= 0.0 {
+        clipped[count] = segment[1];
+        count += 1;
+    }
+
+    if c0 * c1 < 0.0 {
+        clipped[count] = lerp(segment[0], segment[1], c0 / (c0 - c1));
+        count += 1;
+
+        if c1 < 0.0 Swap(*clipped[0], *clipped[1]); // Keep the original segment direction
+    }
+
+    return clipped, count;
+}
+
+clip_segment_with_polygon :: (segment: Segment, vertices: [] Vector2) -> Segment, int {
+    clipped := segment;
+    count: int;
+
+    for i: 0..vertices.count - 1 {
+        j := (i + 1) % vertices.count;
+
+        edge : Segment = .[ vertices[i], vertices[j] ];
+        clipped, count = clip_segment_with_line(clipped, edge);
+
+        if count != 2 break;
+    }
+
+    return clipped, count;
 }
 
 #scope_module
@@ -147,4 +191,10 @@ perpendicular :: (using v: Vector2) -> Vector2 #expand {
 
 cross :: (a: Vector2, b: Vector2) -> float #expand {
     return a.x * b.y - b.x * a.y;
+}
+
+Segment :: [2] Vector2;
+
+segment_normal :: (segment: Segment) -> Vector2 {
+    return perpendicular(normalize(segment[0] - segment[1]));
 }

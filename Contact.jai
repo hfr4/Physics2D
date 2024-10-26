@@ -6,16 +6,36 @@ Contact :: struct {
     depth:    float;
 }
 
-make_contact :: (A: *Collider, B: *Collider) -> Contact, bool {
-    contact: Contact;
-    ok: bool;
+generate_contacts :: (A: *Collider, B: *Collider) -> [2] Contact, int {
+    contacts: [2] Contact;
+    count: int;
 
-    if      A.kind == .CIRCLE  && B.kind == .CIRCLE  contact, ok = circle_circle(A, B);
-    else if A.kind == .POLYGON && B.kind == .CIRCLE  contact, ok = polygon_circle(A, B);
-    else if A.kind == .CIRCLE  && B.kind == .POLYGON contact, ok = polygon_circle(B, A);
-    else if A.kind == .POLYGON && B.kind == .POLYGON contact, ok = polygon_polygon(A, B);
+    if A.kind == .CIRCLE  && B.kind == .CIRCLE {
+        contact, ok := circle_circle(A, B);
+        if ok {
+            contacts[0] = contact;
+            count = 1;
+        }
+    }
+    else if A.kind == .POLYGON && B.kind == .CIRCLE {
+        contact, ok := polygon_circle(A, B);
+        if ok {
+            contacts[0] = contact;
+            count = 1;
+        }
+    }
+    else if A.kind == .CIRCLE  && B.kind == .POLYGON {
+        contact, ok := polygon_circle(B, A);
+        if ok {
+            contacts[0] = contact;
+            count = 1;
+        }
+    }
+    else if A.kind == .POLYGON && B.kind == .POLYGON {
+        contacts, count = polygon_polygon(A, B);
+    }
 
-    return contact, ok;
+    return contacts, count;
 }
 
 circle_circle :: (A: *Collider, B: *Collider) -> Contact, bool {
@@ -64,30 +84,55 @@ polygon_circle :: (A: *Collider, B: *Collider) -> Contact, bool {
     return contact, true;
 }
 
-polygon_polygon :: (A: *Collider, B: *Collider) -> Contact, bool {
-    contact: Contact;
+polygon_polygon :: (A: *Collider, B: *Collider) -> [2] Contact, int {
+    contacts: [2] Contact;
+    contacts_count: int;
 
-    vertices_a := get_vertices(A.polygon);
-    vertices_b := get_vertices(B.polygon);
+    a_vertices := get_vertices(A.polygon);
+    b_vertices := get_vertices(B.polygon);
 
-    ab, is_colliding_ab := find_sat_collision(vertices_a, vertices_b);
-    if !is_colliding_ab return contact, false;
+    a_edge, a_depth := find_smallest_separating_edge_and_depth_using_SAT(a_vertices, b_vertices);
+    if a_depth >= 0.0 return contacts, contacts_count;
 
-    ba, is_colliding_ba := find_sat_collision(vertices_b, vertices_a);
-    if !is_colliding_ba return contact, false;
+    b_edge, b_depth := find_smallest_separating_edge_and_depth_using_SAT(b_vertices, a_vertices);
+    if b_depth >= 0.0 return contacts, contacts_count;
 
-    contact_normal   := ifx ab.depth < ba.depth then ab.normal else -ba.normal;
-    world_point_on_A := ifx ab.depth < ba.depth then ab.point  else ba.point + ba.normal * ba.depth;
-    world_point_on_B := ifx ab.depth > ba.depth then ba.point  else ab.point + ab.normal * ab.depth;
+    reference_is_A := a_depth > b_depth;
 
-    contact.A        = A;
-    contact.B        = B;
-    contact.anchor_A = make_anchor(A, world_point_on_A);
-    contact.anchor_B = make_anchor(B, world_point_on_B);
-    contact.normal   = contact_normal;
-    contact.depth    = distance(world_point_on_A, world_point_on_B);
+    ref_vertices    := ifx reference_is_A then a_vertices else b_vertices;
+    inc_vertices    := ifx reference_is_A then b_vertices else a_vertices;
+    ref_edge        := ifx reference_is_A then a_edge     else b_edge;
+    ref_edge_normal := segment_normal(ref_edge);
+    inc_edge        := find_edge_pointed_by_direction(inc_vertices, ref_edge_normal);
 
-    return contact, true;
+    clip, clip_count := clip_segment_with_polygon(inc_edge, ref_vertices);
+    if !clip_count return contacts, contacts_count;
+
+    for 0..clip_count - 1 {
+        depth := dot(ref_edge[0] - clip[it], ref_edge_normal);
+
+        EPSILON :: 0.05;
+        if depth < EPSILON continue;
+
+        world_point_on_ref := clip[it];
+        world_point_on_inc := clip[it] + ref_edge_normal * depth;
+        world_point_on_A   := ifx reference_is_A then world_point_on_ref else world_point_on_inc;
+        world_point_on_B   := ifx reference_is_A then world_point_on_inc else world_point_on_ref;
+        contact_normal     := ifx reference_is_A then ref_edge_normal    else -ref_edge_normal;
+
+        contact: Contact;
+        contact.A        = A;
+        contact.B        = B;
+        contact.anchor_A = make_anchor(A, world_point_on_A);
+        contact.anchor_B = make_anchor(B, world_point_on_B);
+        contact.normal   = contact_normal;
+        contact.depth    = depth;
+
+        contacts[contacts_count] = contact;
+        contacts_count += 1;
+    }
+
+    return contacts, contacts_count;
 }
 
 solve :: (using contact: *Contact) {
@@ -102,9 +147,6 @@ solve :: (using contact: *Contact) {
 
     N   := normal;
     dvn := dot(V, N);
-
-    colliders_are_moving_apart := dvn > 0.0;
-    if colliders_are_moving_apart return;
 
     T   := N * dvn - V; // Tangent
     dvt := dot(V, T);

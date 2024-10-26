@@ -2,7 +2,7 @@ colliders: [..] *Physics.Collider;
 
 circ1, circ2:               Physics.Collider;
 rect1, rect2, rect3, rect4: Physics.Collider;
-walls:                      [4] Physics.Collider;
+borders:                      [4] Physics.Collider;
 
 My_Collider_Userdata :: struct {
     texture: *Simp.Texture;
@@ -39,12 +39,12 @@ main :: () {
     H := cast(float) window_height;
     O := 50.0;
 
-    walls[0] = Physics.make_rectangle(.{ W/2.0, -O    }, W      , O * 2.0, 0.0, 0.5, 0.05);
-    walls[1] = Physics.make_rectangle(.{ W/2.0, H + O }, W      , O * 2.0, 0.0, 0.5, 0.05);
-    walls[2] = Physics.make_rectangle(.{-O    , H/2.0 }, O * 2.0, H      , 0.0, 0.5, 0.05);
-    walls[3] = Physics.make_rectangle(.{ W + O, H/2.0 }, O * 2.0, H      , 0.0, 0.5, 0.05);
+    borders[0] = Physics.make_rectangle(.{ W/2.0, -O    }, W      , O * 2.0, 0.0, 0.5, 0.05);
+    borders[1] = Physics.make_rectangle(.{ W/2.0, H + O }, W      , O * 2.0, 0.0, 0.5, 0.05);
+    borders[2] = Physics.make_rectangle(.{-O    , H/2.0 }, O * 2.0, H      , 0.0, 0.5, 0.05);
+    borders[3] = Physics.make_rectangle(.{ W + O, H/2.0 }, O * 2.0, H      , 0.0, 0.5, 0.05);
 
-    array_add(*colliders, *circ1, *rect1, *rect2, *rect3, *rect4, *circ2, *walls[0], *walls[1], *walls[2], *walls[3]);
+    array_add(*colliders, *circ1, *rect1, *rect2, *rect3, *rect4, *circ2, *borders[0], *borders[1], *borders[2], *borders[3]);
 
     data1.texture = *yotsuba1;
     data2.texture = *yotsuba2;
@@ -124,8 +124,8 @@ draw_one_frame :: (dt: float) {
 
     for i: 0..colliders.count - 2 {
         for j: i + 1..colliders.count - 1 {
-            contact, ok := Physics.make_contact(colliders[i], colliders[j]);
-            if ok Physics.solve(*contact);
+            contacts, count := Physics.generate_contacts(colliders[i], colliders[j]);
+            for 0..count - 1 Physics.solve(*contacts[it]);
         }
     }
 

@@ -2,7 +2,7 @@ colliders: [..] *Physics.Collider;
 mouse_anchor: Physics.Anchor;
 
 polygon, rectangle, circle: Physics.Collider;
-walls: [4] Physics.Collider;
+borders: [4] Physics.Collider;
 
 colliders_joint: Physics.Joint;
 
@@ -21,19 +21,17 @@ main :: () {
     rectangle = Physics.make_rectangle(.{500, 200}, 200, 50 , 1.0, 0.5, 0.05);
     circle    = Physics.make_circle(.{700, 300}, 50.0, 1.0, 0.5, 0.05);
 
-    // colliders_joint = Physics.make_joint(*polygon, polygon.position, *circle, circle.position);
-
     W := cast(float) window_width;
     H := cast(float) window_height;
     C := Vector2.{ W / 2.0, H / 2.0 };
     O := 50.0;
 
-    walls[0] = Physics.make_rectangle(.{ C.x  , -O    }, W      , O * 2.0, 0.0, 0.5, 0.05);
-    walls[1] = Physics.make_rectangle(.{ C.x  , H + O }, W      , O * 2.0, 0.0, 0.5, 0.05);
-    walls[2] = Physics.make_rectangle(.{-O    , C.y   }, O * 2.0, H      , 0.0, 0.5, 0.05);
-    walls[3] = Physics.make_rectangle(.{ W + O, C.y   }, O * 2.0, H      , 0.0, 0.5, 0.05);
+    borders[0] = Physics.make_rectangle(.{ C.x  , -O    }, W      , O * 2.0, 0.0, 0.5, 0.05);
+    borders[1] = Physics.make_rectangle(.{ C.x  , H + O }, W      , O * 2.0, 0.0, 0.5, 0.05);
+    borders[2] = Physics.make_rectangle(.{-O    , C.y   }, O * 2.0, H      , 0.0, 0.5, 0.05);
+    borders[3] = Physics.make_rectangle(.{ W + O, C.y   }, O * 2.0, H      , 0.0, 0.5, 0.05);
 
-    array_add(*colliders, *polygon, *rectangle, *circle, *walls[0], *walls[1], *walls[2], *walls[3]);
+    array_add(*colliders, *polygon, *rectangle, *circle, *borders[0], *borders[1], *borders[2], *borders[3]);
 
     quit := false;
     while !quit {
@@ -104,25 +102,7 @@ draw_one_frame :: (dt: float) {
             Physics.add_force_at_point(mouse_anchor.collider, mouse_force, anchor_position);
         }
     }
-/*
-    {
-        a_anchor_position := Physics.get_position(colliders_joint.A);
-        b_anchor_position := Physics.get_position(colliders_joint.B);
 
-        force: Vector2;
-
-        dist := distance(a_anchor_position, b_anchor_position);
-
-        if dist > 300.0 {
-            force = (a_anchor_position - b_anchor_position) * 2.5;
-        } else if dist < 100.0 {
-            force = (b_anchor_position - a_anchor_position) * 2.5;
-        }
-
-        Physics.add_force_at_point(colliders_joint.A.collider, -force, a_anchor_position);
-        Physics.add_force_at_point(colliders_joint.B.collider,  force, b_anchor_position);
-    }
-*/
     for colliders {
         GRAVITY :: Vector2.{ 0, 250 };
 
@@ -136,8 +116,8 @@ draw_one_frame :: (dt: float) {
 
     for i: 0..colliders.count - 2 {
         for j: i + 1..colliders.count - 1 {
-            contact, ok := Physics.make_contact(colliders[i], colliders[j]);
-            if ok Physics.solve(*contact);
+            contacts, count := Physics.generate_contacts(colliders[i], colliders[j]);
+            for 0..count - 1 Physics.solve(*contacts[it]);
         }
     }
 
@@ -157,14 +137,7 @@ draw_one_frame :: (dt: float) {
         draw_segment(anchor_position, mouse_position, .{ 1, 0, 0, 1}, 2.0);
         draw_circle(anchor_position, 5.0, .{ 1, 0, 0, 1}, 2.0);
     }
-/*
-    {
-        a_position, b_position := Physics.get_positions(colliders_joint);
-        draw_segment(a_position, b_position, .{ 0, 1, 1, 1}, 2.0);
-        draw_circle(a_position, 5.0, .{ 0, 1, 1, 1}, 2.0);
-        draw_circle(b_position, 5.0, .{ 0, 1, 1, 1}, 2.0);
-    }
-*/
+
     Simp.swap_buffers(window);
 }
 

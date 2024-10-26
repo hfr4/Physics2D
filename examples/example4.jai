@@ -1,6 +1,7 @@
 colliders: [..] *Physics.Collider;
 
-polygon1, polygon2: Physics.Collider;
+borders: [4] Physics.Collider;
+rects: [..] Physics.Collider;
 
 main :: () {
     #if OS == .WINDOWS {
@@ -13,17 +14,15 @@ main :: () {
 
     Simp.set_render_target(window, .LEFT_HANDED);
 
+
     W := cast(float) window_width;
     H := cast(float) window_height;
     C := Vector2.{ W / 2.0, H / 2.0 };
     O := 50.0;
 
-    vertices1 := Vector2.[ .{280, 280}, .{400, 300}, .{300, 400} ];
-    vertices2 := Vector2.[ .{500, 300}, .{600, 250}, .{700, 300}, .{750, 400}, .{500, 400} ];
-    polygon1  = Physics.make_polygon(vertices1, 1.0, 0.5, 0.05);
-    polygon2  = Physics.make_polygon(vertices2, 1.0, 0.5, 0.05);
-
-    array_add(*colliders, *polygon1, *polygon2);
+    borders[1] = Physics.make_rectangle(.{ C.x  , H + O - 200 }, 800      , 100, 0.0, 0.5, 0.05);
+    // Physics.rotate(*borders[1], 0.001);
+    array_add(*colliders, *borders[1]);
 
     quit := false;
     while !quit {
@@ -31,9 +30,6 @@ main :: () {
         dt := cast(float)(current_time - last_time);
         Clamp(*dt, 0, 0.1);
         last_time = current_time;
-
-        mx, my := Window.get_mouse_pointer_position(right_handed = false);
-        mouse_position := Vector2.{ cast(float) mx , cast(float) my };
 
         Input.update_window_events();
 
@@ -50,36 +46,25 @@ main :: () {
             if it.type == .QUIT then quit = true;
         }
 
-        if Input.input_button_states[Input.Key_Code.ESCAPE] & .START {
-            quit = true;
-        }
+        for Input.input_button_states {
+            key      := cast(Input.Key_Code) it_index;
+            pressed  := it & .START;
+            released := it & .END;
+            down     := it & .DOWN;
 
-        FORCE  :: 1000.0;
-        TORQUE :: 5000.0;
+            if key == .ESCAPE && pressed then quit = true;
 
-        UP    :: Vector2.{  0, -1 };
-        DOWN  :: Vector2.{  0,  1 };
-        LEFT  :: Vector2.{ -1,  0 };
-        RIGHT :: Vector2.{  1,  0 };
+            if key == .MOUSE_BUTTON_LEFT && pressed {
+                mx, my         := Window.get_mouse_pointer_position(right_handed = false);
+                mouse_position := Vector2.{ cast(float) mx , cast(float) my };
+                rect := New(Physics.Collider);
+                rect.* = Physics.make_rectangle(mouse_position, 200, 20, 1.0, 0.5, 0.05);
 
-        if Input.input_button_states[Input.Key_Code.ARROW_UP] & .DOWN {
-            Physics.add_force(*polygon1, FORCE * UP);
-        }
+                array_add(*colliders, rect);
+            }
 
-        if Input.input_button_states[Input.Key_Code.ARROW_DOWN] & .DOWN {
-            Physics.add_force(*polygon1, FORCE * DOWN);
-        }
-
-        ctrl_is_down := Input.input_button_states[Input.Key_Code.CTRL] & .DOWN;
-
-        if Input.input_button_states[Input.Key_Code.ARROW_LEFT] & .DOWN {
-            if ctrl_is_down Physics.add_torque(*polygon1, -TORQUE);
-            else            Physics.add_force(*polygon1, FORCE * LEFT);
-        }
-
-        if Input.input_button_states[Input.Key_Code.ARROW_RIGHT] & .DOWN {
-            if ctrl_is_down Physics.add_torque(*polygon1, TORQUE);
-            else            Physics.add_force(*polygon1, FORCE * RIGHT);
+            if key == .MOUSE_BUTTON_LEFT && released {
+            }
         }
 
         draw_one_frame(dt);
@@ -94,19 +79,25 @@ draw_one_frame :: (dt: float) {
 
     Simp.set_shader_for_color(true);
 
+    mx, my         := Window.get_mouse_pointer_position(right_handed = false);
+    mouse_position := Vector2.{ cast(float) mx , cast(float) my };
+
     for colliders {
-        LINEAR_FRICTION  :: 3.0;
-        ANGULAR_FRICTION :: 3.0;
+        GRAVITY :: Vector2.{ 0, 250 };
 
-        force  := -it.linear_velocity  * it.mass    * LINEAR_FRICTION;
-        torque := -it.angular_velocity * it.inertia * ANGULAR_FRICTION;
-
-        Physics.add_force(it, force);
-        Physics.add_torque(it, torque);
+        gravity_force := GRAVITY * it.mass;
+        Physics.add_force(it, gravity_force);
     }
 
     for colliders {
         Physics.update(it, dt);
+    }
+
+    for i: 0..colliders.count - 2 {
+        for j: i + 1..colliders.count - 1 {
+            contacts, count := Physics.generate_contacts(colliders[i], colliders[j]);
+            for 0..count - 1 Physics.solve(*contacts[it]);
+        }
     }
 
     for colliders {
@@ -118,54 +109,6 @@ draw_one_frame :: (dt: float) {
             case .POLYGON;
                 draw_polygon(Physics.get_vertices(it.polygon), .{ 1, 1, 1, 1 }, 2.0);
         }
-    }
-
-/*
-    for i: 0..colliders.count - 2 {
-        for j: i + 1..colliders.count - 1 {
-            contact, ok := make_contact(*colliders[i], *colliders[j]);
-
-            draw_point(contact.start, .{ 0, 1, 0, 1}, 10.0);
-            draw_point(contact.end  , .{ 1, 0, 0, 1}, 10.0);
-        }
-    }
-*/
-
-    vertices_a := Physics.get_vertices(polygon1.polygon);
-    vertices_b := Physics.get_vertices(polygon2.polygon);
-
-/*
-    {
-        sat_a, ok_a := find_sat_separation(vertices_a, vertices_b);
-        sat_b, ok_b := find_sat_separation(vertices_a, vertices_b);
-
-        if ok_a draw_point(sat_a.point, .{ 0, 1, 0, 1 }, 10.0);
-        if ok_a draw_segment(sat_a.point, sat_a.point + sat_a.normal * sat_a.depth, .{ 0, 1, 0, 1 }, 2.0);
-
-        if ok_b draw_point(sat_b.point, .{ 1, 0, 0, 1 }, 10.0);
-        if ok_b draw_segment(sat_b.point, sat_b.point + sat_b.normal * sat_b.depth, .{ 1, 0, 0, 1 }, 2.0);
-    }
-*/
-
-    {
-        i := 0;
-        j := (i + 1) % vertices_a.count;
-
-        edge   := vertices_a[i] - vertices_a[j];
-        vector := normalize(edge);
-        perpendicular :: (using v: Vector2) -> Vector2 {
-            return .{ -y, x };
-        }
-        normal := perpendicular(vector);
-
-        draw_point(vertices_a[i], .{ 1, 0, 0, 1 }, 10.0);
-        draw_segment(vertices_a[i], vertices_a[j], .{ 1, 0, 0, 1 }, 2.0);
-        draw_segment(vertices_a[i], vertices_a[i] + normal * 20.0, .{ 0, 1, 0, 1 }, 2.0);
-
-        support := Physics.find_sat_support(vertices_a[i], normal, vertices_b);
-        draw_point(support.point, .{ 0, 1, 1, 1 }, 10.0);
-        draw_segment(support.point, support.point + normal * support.depth, .{ 0, 1, 1, 1 }, 2.0);
-
     }
 
     Simp.swap_buffers(window);
@@ -186,7 +129,7 @@ draw_segment :: (a: Vector2, b: Vector2, color: Vector4, width: float) {
 }
 
 draw_polygon :: (vertices: [] Vector2, color: Vector4, width: float) {
-    for vertices {
+    for vertex: vertices {
         a := vertices[it_index];
         b := vertices[(it_index + 1) % vertices.count];
         draw_segment(a, b, color, width);
