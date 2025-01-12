@@ -1,11 +1,33 @@
-calculate_polygon_centroid :: (vertices: [] Vector2) -> Vector2 {
+ComputeCircleInertia :: (radius: float, mass: float) -> float {
+    return mass * radius * radius / 2.0;
+}
+
+ComputePolygonInertia :: (vertices: [] Vector2, mass: float) -> float {
+    inertia: float;
+
+    centroid      := ComputePolygonCentroid(vertices);
+    triangle_mass := mass / vertices.count;
+
+    for i: 0..vertices.count - 1 {
+        j := (i + 1) % vertices.count;
+
+        ci := vertices[i] - centroid;
+        cj := vertices[j] - centroid;
+
+        inertia += (dot(ci, ci) + dot(cj, cj) + dot(ci, cj)) * triangle_mass / 6.0;
+    }
+
+    return inertia;
+}
+
+ComputePolygonCentroid :: (vertices: [] Vector2) -> Vector2 {
     centroid: Vector2;
     area: float;
 
     for i: 0..vertices.count - 1 {
         j := (i + 1) % vertices.count;
 
-        partial_area := cross(vertices[i], vertices[j]);
+        partial_area := Cross(vertices[i], vertices[j]);
 
         area     += partial_area;
         centroid += partial_area * (vertices[i] + vertices[j]);
@@ -17,38 +39,35 @@ calculate_polygon_centroid :: (vertices: [] Vector2) -> Vector2 {
     return centroid;
 }
 
-calculate_polygon_inertia :: (vertices: [] Vector2, mass: float) -> float {
-    inertia: float;
+ClosestEdgeFromPoint :: (vertices: [] Vector2, point: Vector2) -> [2] Vector2, int {
+    result: [2] Vector2;
+	index: int;
 
-    centroid      := calculate_polygon_centroid(vertices);
-    triangle_mass := mass / vertices.count;
-
+    max_depth := -FLOAT32_MAX;
     for i: 0..vertices.count - 1 {
         j := (i + 1) % vertices.count;
 
-        ci := vertices[i] - centroid;
-        cj := vertices[j] - centroid;
+        edge   := Vector2.[ vertices[i], vertices[j] ];
+		normal := Perpendicular(normalize(edge[0] - edge[1]));
+        depth  := dot(point - edge[0], normal);
 
-        dots := dot(ci, ci) + dot(cj, cj) + dot(ci, cj);
-
-        triangle_inertia := dots * triangle_mass / 6.0;
-        inertia += triangle_inertia;
+        if depth > max_depth {
+            max_depth = depth;
+            result    = edge;
+			index     = i;
+        }
     }
 
-    return inertia;
+    return result, index;
 }
 
-calculate_circle_inertia :: (radius: float, mass: float) -> float {
-    return mass * radius * radius / 2.0;
-}
-
-is_point_inside_polygon :: (vertices: [] Vector2, point: Vector2) -> bool {
+IsPointInsidePolygon :: (vertices: [] Vector2, point: Vector2) -> bool {
     for i: 0..vertices.count - 1 {
         j := (i + 1) % vertices.count;
 
-        edge   : Segment = .[ vertices[i], vertices[j] ];
-        normal := segment_normal(edge);
-        depth  := dot(point - vertices[i], normal);
+        edge   := Vector2.[ vertices[i], vertices[j] ];
+        normal := Perpendicular(normalize(edge[0] - edge[1]));
+        depth  := dot(point - edge[0], normal);
 
         if depth > 0.0 return false;
     }
@@ -56,145 +75,102 @@ is_point_inside_polygon :: (vertices: [] Vector2, point: Vector2) -> bool {
     return true;
 }
 
-is_point_inside_circle :: (center: Vector2, radius: float, point: Vector2) -> bool {
-    return distance(center, point) <= radius;
+ClosestPointOnEdge :: (edge: [2] Vector2, point: Vector2) -> Vector2 {
+    vector := edge[1] - edge[0];
+    ratio  := dot(point - edge[0], vector) / dot(vector, vector);
+	Clamp(*ratio, 0.0, 1.0);
+    return lerp(edge[0], edge[1], ratio);
 }
 
-find_closest_edge_from_point :: (vertices: [] Vector2, point: Vector2) -> Segment {
-    result: Segment;
+ComputeReferentEdge :: (A: [] Vector2, B: [] Vector2) -> [2] Vector2, int, bool, bool {
+	SAT :: (A: [] Vector2, B: [] Vector2) -> [2] Vector2, int, float {
+		result: [2] Vector2;
+		index: int;
+		separation := -FLOAT32_MAX;
 
-    max_depth := -FLOAT32_MAX;
-    for i: 0..vertices.count - 1 {
+		for i: 0..A.count - 1 {
+			j := (i + 1) % A.count;
+
+			edge   := Vector2.[ A[i], A[j] ];
+			normal := Perpendicular(normalize(edge[0] - edge[1]));
+
+			min_proj := FLOAT32_MAX;
+			for B  min_proj = min(min_proj, dot((it - edge[0]), normal));
+
+			if separation < min_proj {
+				separation = min_proj;
+				result     = edge;
+				index      = i;
+			}
+		}
+
+		return result, index, separation;
+	}
+
+	A_edge, A_index, A_depth := SAT(A, B);
+	if A_depth >= 0.0 return .[ .{}, .{} ], 0, false, false;
+
+	B_edge, B_index, B_depth := SAT(B, A);
+	if B_depth >= 0.0 return .[ .{}, .{} ], 0, false, false;
+
+	if A_depth > B_depth return A_edge, A_index, true , true;
+	else                 return B_edge, B_index, false, true;
+}
+
+ComputeIncidentEdge :: (vertices: [] Vector2, referent_edge_normal: Vector2) -> [2] Vector2, int {
+	result: [2] Vector2;
+	index: int;
+	min_proj := FLOAT32_MAX;
+
+	for i: 0..vertices.count - 1 {
         j := (i + 1) % vertices.count;
 
-        edge : Segment = .[ vertices[i], vertices[j] ];
-        depth := dot(point - vertices[i], segment_normal(edge));
+		edge   := Vector2.[ vertices[i], vertices[j] ];
+		normal := Perpendicular(normalize(edge[0] - edge[1]));
+		proj   := dot(referent_edge_normal, normal);
 
-        if depth > max_depth {
-            max_depth = depth;
-            result    = edge;
+		if proj < min_proj {
+			min_proj = proj;
+			result   = edge;
+			index    = i;
+		}
+	}
 
-        }
-    }
-
-    return result;
+	return result, index;
 }
 
-find_edge_pointed_by_direction :: (vertices: [] Vector2, dir: Vector2) -> Segment {
-    result: Segment;
-
-    min_proj := FLOAT32_INFINITY;
-
-    for i: 0..vertices.count - 1 {
-        j := (i + 1) % vertices.count;
-
-        edge : Segment = .[ vertices[i], vertices[j] ];
-        normal := segment_normal(edge);
-        proj   := dot(normal, dir);
-
-        if proj < min_proj {
-            min_proj = proj;
-            result   = edge;
-        }
-    }
-
-    return result;
-}
-
-find_closest_point_on_edge :: (edge: Segment, point: Vector2) -> Vector2 {
-    vector        := edge[1] - edge[0];
-    ratio_on_line := dot(point - edge[0], vector) / dot(vector, vector);
-    ratio_on_edge := clamp(ratio_on_line, 0.0, 1.0);
-    return lerp(edge[0], edge[1], ratio_on_edge);
-}
-
-find_closest_point_on_vertices :: (vertices: [] Vector2, point: Vector2) -> Vector2 {
-    edge := find_closest_edge_from_point(vertices, point);
-    return find_closest_point_on_edge(edge, point);
-}
-
-find_smallest_separating_edge_and_depth_using_SAT :: (vertices_a: [] Vector2, vertices_b: [] Vector2) -> Segment, float {
-    result: Segment;
-    depth := -FLOAT32_INFINITY;
-
-    for i: 0..vertices_a.count - 1 {
-        j := (i + 1) % vertices_a.count;
-
-        edge : Segment = .[ vertices_a[i], vertices_a[j] ];
-        normal := segment_normal(edge);
-
-        min_proj := FLOAT32_INFINITY;
-        for b: vertices_b {
-            proj := dot((b - edge[0]), normal);
-            if min_proj > proj {
-                min_proj = proj;
-            }
-        }
-
-        if depth < min_proj {
-            depth  = min_proj;
-            result = edge;
-        }
-    }
-
-    return result, depth;
-}
-
-clip_segment_with_line :: (segment: Segment, line: Segment) -> Segment, int {
-    clipped: Segment;
+ClipEdgeWithLine :: (edge: *[2] Vector2, position: Vector2, direction: Vector2) -> int {
+    clipped: [2] Vector2;
     count: int;
 
-    c0 := cross(segment[0] - line[0], line[1] - line[0]);
-    c1 := cross(segment[1] - line[0], line[1] - line[0]);
+    c0 := Cross(edge.*[0] - position, direction);
+    c1 := Cross(edge.*[1] - position, direction);
 
-    if c0 <= 0.0 {
-        clipped[count] = segment[0];
-        count += 1;
-    }
-
-    if c1 <= 0.0 {
-        clipped[count] = segment[1];
-        count += 1;
-    }
+    if c0 <= 0.0 { clipped[count] = edge.*[0]; count += 1; }
+    if c1 <= 0.0 { clipped[count] = edge.*[1]; count += 1; }
 
     if c0 * c1 < 0.0 {
-        clipped[count] = lerp(segment[0], segment[1], c0 / (c0 - c1));
+		ratio := c0 / (c0 - c1);
+        clipped[count] = lerp(edge.*[0], edge.*[1], ratio);
         count += 1;
-
-        if c1 < 0.0 Swap(*clipped[0], *clipped[1]); // Keep the original segment direction
     }
 
-    return clipped, count;
+	edge.* = clipped;
+
+    return count;
 }
 
-clip_segment_with_polygon :: (segment: Segment, vertices: [] Vector2) -> Segment, int {
-    clipped := segment;
-    count: int;
-
-    for i: 0..vertices.count - 1 {
-        j := (i + 1) % vertices.count;
-
-        edge : Segment = .[ vertices[i], vertices[j] ];
-        clipped, count = clip_segment_with_line(clipped, edge);
-
-        if count != 2 break;
-    }
-
-    return clipped, count;
+Inverse :: (using m: Matrix2) -> Matrix2 {
+	det := _11 * _22 - _21 * _12;
+	assert(det != 0.0);
+	det = 1.0 / det;
+	return det * Matrix2.{ _22, -_12, -_21, _11 };
 }
 
-#scope_module
-
-perpendicular :: (using v: Vector2) -> Vector2 #expand {
-    return .{ -y, x };
+Perpendicular :: (using v: Vector2) -> Vector2 {
+	return .{ -y, x };
 }
 
-cross :: (a: Vector2, b: Vector2) -> float #expand {
-    return a.x * b.y - b.x * a.y;
-}
-
-Segment :: [2] Vector2;
-
-segment_normal :: (segment: Segment) -> Vector2 {
-    return perpendicular(normalize(segment[0] - segment[1]));
+Cross :: (a: Vector2, b: Vector2) -> float {
+	return a.x * b.y - a.y * b.x;
 }
